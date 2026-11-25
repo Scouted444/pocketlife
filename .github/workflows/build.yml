@@ -41,6 +41,15 @@ jobs:
           name: model-preview
           path: model_preview.png
 
+      - name: Push model preview to the ci-preview branch
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p /tmp/pv && cp model_preview.png /tmp/pv/
+          cd /tmp/pv && git init -q && git checkout -q -b ci-preview
+          git -c user.name=ci -c user.email=ci@localhost add model_preview.png
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "model preview for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" ci-preview
+
       - name: Publish release
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
