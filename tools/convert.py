@@ -417,7 +417,10 @@ def main():
     name, p = find(["wall"])
     if p:
         bx = load_obj(p).bbox()
-        tile = max(bx[1] - bx[0], bx[5] - bx[4]) or 1.0
+        wall_len = max(bx[1] - bx[0], bx[5] - bx[4]) or 1.0
+        # Kenney's wall panel is ~2 m wide; the game uses Sims-style 1 m tiles,
+        # so a tile is half a wall panel and wall pieces get squeezed to 1 tile.
+        tile = wall_len / 2.0
     print(f"[convert] tile size = {tile:.3f} kit units")
 
     out_models, icons, report = [], [], []
@@ -470,6 +473,10 @@ def main():
         if key.startswith("WALL") and d > w:  # walls must run along x
             mesh.transform(lambda v: (v[2], v[1], -v[0]))
             w, d = d, w
+        if key.startswith("WALL") and src != "fallback" and w > 1.01:  # one wall piece per tile edge
+            kx = 1.0 / w
+            mesh.transform(lambda v: (v[0] * kx, v[1], v[2]))
+            w = 1.0
         # keep vertices inside the DS's 4.12 range (+-8 tiles), shrink if huge
         big = max(w, d, h)
         if big > 7.5:
@@ -478,8 +485,8 @@ def main():
             w, d, h = w * k, d * k, h * k
         polys = decimate(mesh.faces, cap)
         dl = encode(polys)
-        fw = max(1, min(3, int(round(w - 0.15)) if w > 1.15 else 1))
-        fd = max(1, min(3, int(round(d - 0.15)) if d > 1.15 else 1))
+        fw = max(1, min(3, math.ceil(w - 0.3)))
+        fd = max(1, min(3, math.ceil(d - 0.3)))
         if key == "WALL":
             wall_h = h
             cols = {}
@@ -500,6 +507,7 @@ def main():
             if pref:
                 try:
                     img = icon_from_png(pref[0])
+                    src += "  [icon " + os.path.basename(pref[0]) + "]"
                 except Exception:
                     img = None
         if img is None:
