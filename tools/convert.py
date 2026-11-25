@@ -52,9 +52,9 @@ MODELS = [
                     [["desk"], ["computerScreen", "laptop"]]),
     ("BOOKCASE",    ["bookcaseOpen", "bookcaseClosedWide", "bookcaseClosed"], (1, .4, 1.4, (150, 105, 70)), 110, None),
     ("TABLE",       ["table", "tableCloth"],                (1, 1, .7, (170, 125, 85)), 70, None),
-    ("CHAIR",       ["chair", "chairCushion"],              (.6, .6, .9, (160, 115, 75)), 70, None),
+    ("CHAIR",       ["chair", "chairCushion"],              (.6, .6, .9, (160, 115, 75)), 170, None),
     ("PLANT",       ["pottedPlant", "plantSmall1"],         (.5, .5, .9, (80, 160, 70)), 90, None),
-    ("LAMP",        ["lampRoundFloor", "lampSquareFloor"],  (.4, .4, 1.3, (250, 230, 160)), 60, None),
+    ("LAMP",        ["lampRoundFloor", "lampSquareFloor"],  (.4, .4, 1.3, (250, 230, 160)), 170, None),
     ("RUG",         ["rugRectangle", "rugRounded", "rugSquare"], (2, 1, .02, (190, 80, 80)), 24, None),
     ("RADIO",       ["radio", "speaker"],                   (.5, .3, .4, (60, 60, 70)), 70, None),
     ("TRASH",       ["trashcan"],                           (.4, .4, .5, (130, 140, 140)), 60, None),
@@ -62,7 +62,7 @@ MODELS = [
     ("COFFEETABLE", ["tableCoffee", "tableCoffeeGlass"],    (1.2, .7, .4, (150, 105, 70)), 70, None),
     ("DRESSER",     ["cabinetBedDrawer", "cabinetBedDrawerTable", "cabinetBed"], (1, .5, .8, (190, 150, 110)), 80, None),
     ("WASHER",      ["washer", "washerDryerStacked"],       (.8, .8, .9, (235, 235, 240)), 90, None),
-    ("COATRACK",    ["coatRackStanding", "coatRack"],       (.4, .4, 1.4, (140, 100, 70)), 70, None),
+    ("COATRACK",    ["coatRackStanding", "coatRack"],       (.4, .4, 1.4, (140, 100, 70)), 170, None),
 ]
 
 ICON = 32
