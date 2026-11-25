@@ -228,9 +228,9 @@ def decimate(faces, cap):
     polys = split_polys(faces)
     if len(polys) <= cap:
         return polys
-    cell = 0.01
+    cell = 0.004
     best = polys
-    for _ in range(14):
+    for _ in range(60):
         snap = lambda v: (round(v[0] / cell) * cell, round(v[1] / cell) * cell, round(v[2] / cell) * cell)
         d = split_polys([([snap(v) for v in f], c) for f, c in faces])
         # dedupe identical faces
@@ -244,7 +244,7 @@ def decimate(faces, cap):
         best = dd
         if len(dd) <= cap:
             break
-        cell *= 1.45
+        cell *= 1.1
     if len(best) > cap:
         # last resort: keep the biggest faces
         def area(f):
@@ -364,6 +364,31 @@ def soft_render(polys, size=ICON):
     return img
 
 
+def preview_sheet(items, path, cell=112, cols=6):
+    """contact sheet of every converted model (what the DS will draw), red mark = +z 'front'"""
+    if Image is None:
+        return
+    rows = (len(items) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * cell, rows * (cell + 12)), (40, 48, 56))
+    from PIL import ImageDraw
+    dr = ImageDraw.Draw(sheet)
+    for i, (name, polys) in enumerate(items):
+        bb = None
+        xs = [v[0] for f, _ in polys for v in f] or [0]
+        zs = [v[2] for f, _ in polys for v in f] or [0]
+        zmax, xr = max(zs), (max(xs) - min(xs)) / 2 or 0.3
+        mark = [([(-xr * .3, 0.001, zmax + .02), (xr * .3, 0.001, zmax + .02), (0, 0.001, zmax + .35)], (255, 0, 0))]
+        img = soft_render(polys + mark, cell - 8)
+        x0, y0 = (i % cols) * cell, (i // cols) * (cell + 12)
+        if img:
+            for y, row in enumerate(img):
+                for x, px in enumerate(row):
+                    if px is not None:
+                        sheet.putpixel((x0 + 4 + x, y0 + 4 + y), px)
+        dr.text((x0 + 3, y0 + cell - 2), f"{name} {len(polys)}p", fill=(255, 255, 255))
+    sheet.save(path)
+
+
 def icon_from_png(path):
     im = Image.open(path).convert("RGBA")
     bb = im.getbbox()
@@ -423,7 +448,7 @@ def main():
         tile = wall_len / 2.0
     print(f"[convert] tile size = {tile:.3f} kit units")
 
-    out_models, icons, report = [], [], []
+    out_models, icons, report, previews = [], [], [], []
     wall_h, wall_rgb = 1.3, (230, 225, 210)
     for key, cands, fb, cap, parts in MODELS:
         src, mesh = "fallback", None
@@ -513,9 +538,15 @@ def main():
         if img is None:
             img = soft_render(polys) or [[None] * ICON for _ in range(ICON)]
         out_models.append((key, dl, fw, fd, w, d, h, len(polys)))
+        previews.append((key, polys))
         icons.append(icon_words(img))
         report.append(f"  {key:12s} <- {src:28s} {len(polys):4d} polys  {fw}x{fd} tiles  h={h:.2f}")
 
+    try:
+        preview_sheet(previews, os.path.join(root, "model_preview.png"))
+        print("[convert] wrote model_preview.png")
+    except Exception as e:
+        print(f"[convert] preview failed: {e}")
     print("[convert] models:")
     print("\n".join(report))
 

@@ -35,6 +35,12 @@ jobs:
           name: pocketlife-nds
           path: pocketlife.nds
 
+      - name: Upload model preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-preview
+          path: model_preview.png
+
       - name: Publish release
         if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2

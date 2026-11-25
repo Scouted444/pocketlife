@@ -6,3 +6,4 @@ assets/dl/
 Makefile.dkp
 source/gen_assets.c
 include/gen_assets.h
+model_preview.png
