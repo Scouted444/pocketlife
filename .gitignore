@@ -1,0 +1,8 @@
+build/
+*.elf
+*.nds
+*.map
+assets/dl/
+Makefile.dkp
+source/gen_assets.c
+include/gen_assets.h
