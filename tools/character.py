@@ -198,7 +198,7 @@ def head():
     # nose
     p.merge(blob(0, 0.105, HEAD_RZ - 0.004, 0.020, 0.024, 0.020, lon=4, lat=2))
     # neck
-    p.merge(tube(-0.05, 0.03, 0.045, 0.042, sides=5, cap0=False, cap1=False))
+    p.merge(tube(-0.05, 0.03, 0.036, 0.034, sides=5, cap0=False, cap1=False))
     return p
 
 
@@ -242,49 +242,49 @@ HAIR_STYLES = 6
 def torso(top):
     """hips are separate (pants colour). top 0 = hoodie, 1 = tee"""
     if top == 0:
-        p = tube(0.34, 0.52, 0.18, 0.195, sides=8, cap0=True, cap1=False, z0=0.11, z1=0.118)
-        p.merge(tube(0.52, 0.655, 0.195, 0.17, sides=8, cap0=False, cap1=True, z0=0.118, z1=0.11))
-        p.merge(blob(0, 0.655, -0.07, 0.13, 0.05, 0.07, lon=6, lat=2, e=0.8))                      # hood
-        p.merge(box(-0.09, 0.40, 0.10, 0.09, 0.47, 0.13))                                          # pocket
+        p = tube(0.34, 0.52, 0.13, 0.142, sides=8, cap0=True, cap1=False, z0=0.082, z1=0.088)
+        p.merge(tube(0.52, 0.655, 0.142, 0.125, sides=8, cap0=False, cap1=True, z0=0.088, z1=0.08))
+        p.merge(blob(0, 0.655, -0.055, 0.095, 0.042, 0.055, lon=6, lat=2, e=0.8))                      # hood
+        p.merge(box(-0.065, 0.40, 0.075, 0.065, 0.465, 0.097))                                          # pocket
         return p
-    p = tube(0.37, 0.52, 0.16, 0.18, sides=8, cap0=True, cap1=False, z0=0.10, z1=0.108)
-    p.merge(tube(0.52, 0.65, 0.18, 0.155, sides=8, cap0=False, cap1=True, z0=0.108, z1=0.10))
+    p = tube(0.37, 0.52, 0.118, 0.132, sides=8, cap0=True, cap1=False, z0=0.075, z1=0.082)
+    p.merge(tube(0.52, 0.65, 0.132, 0.115, sides=8, cap0=False, cap1=True, z0=0.082, z1=0.075))
     return p
 
 
 def hips():
-    return tube(0.33, 0.40, 0.16, 0.165, sides=8, z0=0.100, z1=0.104)
+    return tube(0.33, 0.40, 0.112, 0.118, sides=8, z0=0.074, z1=0.078)
 
 
 def upper_arm(top):
-    r = 0.056 if top == 0 else 0.05
+    r = 0.041 if top == 0 else 0.036
     return tube(0.02, -0.15, r, r - 0.006, sides=6)
 
 
 def lower_arm(top):
     if top == 0:
-        return tube(0.0, -0.14, 0.046, 0.054, sides=6, cap0=False)        # baggy sleeve
-    return tube(0.01, -0.14, 0.038, 0.033, sides=6, cap0=False)           # bare forearm
+        return tube(0.0, -0.14, 0.034, 0.041, sides=6, cap0=False)        # baggy sleeve
+    return tube(0.01, -0.14, 0.029, 0.025, sides=6, cap0=False)           # bare forearm
 
 
 def hand():
-    return blob(0, -0.04, 0.005, 0.036, 0.046, 0.028, lon=5, lat=3, e=0.85)
+    return blob(0, -0.038, 0.004, 0.029, 0.04, 0.023, lon=5, lat=3, e=0.85)
 
 
 def upper_leg():
-    return tube(0.0, -0.18, 0.072, 0.064, sides=6, cap0=False, z0=0.075, z1=0.066)
+    return tube(0.0, -0.18, 0.052, 0.045, sides=6, cap0=False, z0=0.054, z1=0.047)
 
 
 def lower_leg():
-    return tube(0.0, -0.165, 0.064, 0.074, sides=6, cap0=False, z0=0.066, z1=0.076)  # baggy, flares out
+    return tube(0.0, -0.165, 0.045, 0.056, sides=6, cap0=False, z0=0.047, z1=0.058)  # baggy, flares out
 
 
 def shoe():
-    return rbox(-0.054, -0.045, -0.065, 0.054, 0.01, 0.115, 0.03)
+    return rbox(-0.046, -0.045, -0.06, 0.046, 0.01, 0.11, 0.026)
 
 
 def sole():
-    return box(-0.058, -0.064, -0.07, 0.058, -0.044, 0.125)
+    return box(-0.05, -0.064, -0.065, 0.05, -0.044, 0.12)
 
 
 def parts():

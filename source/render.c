@@ -463,7 +463,7 @@ static void drawSimBody(const Sim* s, bool walking, int expr) {
     for (int k = 0; k < 2; k++) {
         float side = k ? -1 : 1;
         glPushMatrix();
-        glTranslatef32(floattof32(0.075f * side), floattof32(0.40f), 0);
+        glTranslatef32(floattof32(0.056f * side), floattof32(0.40f), 0);
         if (P.legA[k]) glRotateX(P.legA[k]);
         part(CP_UPPER_LEG, s->pants);
         glTranslatef32(0, floattof32(-0.18f), 0);
@@ -487,7 +487,7 @@ static void drawSimBody(const Sim* s, bool walking, int expr) {
     for (int k = 0; k < 2; k++) {
         float side = k ? -1 : 1;
         glPushMatrix();
-        glTranslatef32(floattof32(0.215f * side), floattof32(0.62f), 0);
+        glTranslatef32(floattof32(0.158f * side), floattof32(0.62f), 0);
         if (P.armZ[k]) glRotateZ(P.armZ[k] * side);
         if (P.armA[k]) glRotateX(P.armA[k]);
         part(hoodie ? CP_UARM_HOODIE : CP_UARM_TEE, s->shirt);
