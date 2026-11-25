@@ -11,7 +11,7 @@
 #endif
 
 #define SAVE_MAGIC 0x504C4946u   // "PLIF"
-#define SAVE_VER   1
+#define SAVE_VER   2
 #define SAVE_PATH  "/pocketlife.sav"
 
 typedef struct { u32 magic, version, size; } SaveHdr;

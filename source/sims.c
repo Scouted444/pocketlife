@@ -33,6 +33,13 @@ void sim_init(Sim* s, const char* name, int female, u16 skin, u16 hair, u16 shir
     s->x = x; s->z = z;
     for (int i = 0; i < NEED_COUNT; i++) s->need[i] = 70 + (rand() % 25);
     s->rel = 25;
+    s->hairStyle = female ? 1 : 0;
+    s->top = 0;
+    s->shoes = RGB15(4, 4, 5);
+}
+
+void sim_setLook(Sim* s, int hairStyle, int top, u16 shoes) {
+    s->hairStyle = hairStyle % CP_HAIR_STYLES; s->top = top & 1; s->shoes = shoes;
 }
 
 float sim_mood(const Sim* s) {

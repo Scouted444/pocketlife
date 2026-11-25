@@ -580,7 +580,7 @@ static const char* const MNAMES[] = { "Sam", "Leo", "Max", "Theo", "Jay", "Milo"
 static const char* const FNAMES[] = { "Ava", "Mia", "Zoe", "Ruby", "Ivy", "Nora", "Lily", "Maya" };
 static const u16 SKIN[] = { RGB15(31, 25, 20), RGB15(29, 22, 16), RGB15(25, 18, 12), RGB15(20, 13, 8), RGB15(14, 9, 6), RGB15(31, 27, 23) };
 static const u16 HAIR[] = { RGB15(4, 3, 3), RGB15(12, 7, 3), RGB15(28, 23, 10), RGB15(24, 9, 4), RGB15(22, 22, 22), RGB15(6, 12, 26), RGB15(28, 12, 20) };
-static const u16 CLOTH[] = { RGB15(24, 6, 6), RGB15(6, 12, 26), RGB15(6, 22, 10), RGB15(28, 24, 6), RGB15(20, 8, 24), RGB15(29, 29, 29), RGB15(6, 6, 8), RGB15(30, 16, 6), RGB15(8, 22, 24) };
+static const u16 CLOTH[] = { RGB15(24, 6, 6), RGB15(6, 12, 26), RGB15(6, 22, 10), RGB15(28, 24, 6), RGB15(20, 8, 24), RGB15(29, 29, 29), RGB15(6, 6, 8), RGB15(30, 16, 6), RGB15(8, 22, 24), RGB15(10, 14, 21), RGB15(31, 14, 20), RGB15(13, 15, 7) };
 #define NEL(a) (int)(sizeof(a) / sizeof(a[0]))
 
 int ui_title(void) {
@@ -623,80 +623,83 @@ int ui_title(void) {
     }
 }
 
+static const char* const HAIRN[CP_HAIR_STYLES] = { "Spiky", "Long", "Afro", "Ponytail", "Cap", "Mohawk" };
+static const char* const TOPN[2] = { "Hoodie", "Tee" };
+
 void ui_cas(void) {
-    // two housemates, editable one after another
-    int skin[2] = { 1, 3 }, hair[2] = { 1, 0 }, shirt[2] = { 1, 0 }, pants[2] = { 6, 1 }, name[2] = { 0, 0 }, fem[2] = { 0, 1 };
+    // two housemates, edited one after another
+    int v[2][9] = {
+        // name body skin hairStyle hairCol top topCol pants shoes
+        { 0, 0, 1, 0, 1, 0, 0, 6, 6 },
+        { 0, 1, 3, 3, 3, 1, 4, 1, 5 },
+    };
+    static const char* const lab[9] = { "Name", "Body", "Skin", "Hair", "Hair col", "Top", "Top col", "Pants", "Kicks" };
+    const int count[9] = { 8, 2, NEL(SKIN), CP_HAIR_STYLES, NEL(HAIR), 2, NEL(CLOTH), NEL(CLOTH), NEL(CLOTH) };
     for (int who = 0; who < 2; who++) {
         int row = 0;
         float spin = 0;
-        bool done = false;
+        bool done = false, redraw = true;
+        int* c = v[who];
         while (!done) {
             scanKeys();
             int kd = keysDown();
-            if (kd & KEY_UP) row = (row + 5) % 6;
-            if (kd & KEY_DOWN) row = (row + 1) % 6;
+            if (kd & KEY_UP) { row = (row + 8) % 9; redraw = true; }
+            if (kd & KEY_DOWN) { row = (row + 1) % 9; redraw = true; }
             int dlt = (kd & KEY_RIGHT) ? 1 : (kd & KEY_LEFT) ? -1 : 0;
-            int touchedRow = -1;
             if (kd & KEY_TOUCH) {
                 touchPosition tp; touchRead(&tp);
                 int arg, id = hitTest(tp.px, tp.py, &arg);
-                if (id == B_CAS) { touchedRow = arg >> 1; dlt = (arg & 1) ? 1 : -1; }
+                if (id == B_CAS) { row = arg >> 1; dlt = (arg & 1) ? 1 : -1; }
                 if (id == B_TITLE) done = true;
             }
-            if (touchedRow >= 0) row = touchedRow;
-            if (dlt) {
-                switch (row) {
-                case 0: name[who] = (name[who] + dlt + 8) % 8; break;
-                case 1: fem[who] ^= 1; break;
-                case 2: skin[who] = (skin[who] + dlt + NEL(SKIN)) % NEL(SKIN); break;
-                case 3: hair[who] = (hair[who] + dlt + NEL(HAIR)) % NEL(HAIR); break;
-                case 4: shirt[who] = (shirt[who] + dlt + NEL(CLOTH)) % NEL(CLOTH); break;
-                case 5: pants[who] = (pants[who] + dlt + NEL(CLOTH)) % NEL(CLOTH); break;
-                }
+            if (kd & KEY_Y) {   // randomise
+                for (int r = 2; r < 9; r++) c[r] = rand() % count[r];
+                redraw = true;
             }
+            if (dlt) { c[row] = (c[row] + dlt + count[row]) % count[row]; redraw = true; }
             if (kd & (KEY_A | KEY_START)) done = true;
 
-            const char* nm = fem[who] ? FNAMES[name[who]] : MNAMES[name[who]];
+            const char* nm = c[1] ? FNAMES[c[0]] : MNAMES[c[0]];
             Sim t;
-            sim_init(&t, nm, fem[who], SKIN[skin[who]], HAIR[hair[who]], CLOTH[shirt[who]], CLOTH[pants[who]], 0, 0);
-            static int lastKd = -1;
-            if (kd || lastKd == -1 || who != lastKd) {
-            lastKd = who;
-            beginDraw();
-            fill(0, 0, 256, 15, COL_PANEL);
-            text(1, 0, "\x1b[32mCREATE-A-SIM\x1b[39m  housemate %d/2", who + 1);
-            static const char* const lab[6] = { "Name", "Body", "Skin", "Hair", "Shirt", "Pants" };
-            for (int r = 0; r < 6; r++) {
-                bool on = r == row;
-                frame(4, 20 + r * 22, 248, 20, on ? COL_PANEL2 : COL_PANEL, on ? COL_HI2 : COL_EDGE);
-            }
-            // values (rows are 22px apart, so place text by pixel row / 8)
-            for (int r = 0; r < 6; r++) {
-                int ty = (20 + r * 22 + 6) / 8;
-                printf("\x1b[%d;2H%-6s", ty, lab[r]);
-                button(10, ty, 3, "<", B_CAS, r * 2, false);
-                button(27, ty, 3, ">", B_CAS, r * 2 + 1, false);
-                u16 sw = 0;
-                switch (r) {
-                case 0: printf("\x1b[%d;15H%s", ty, nm); break;
-                case 1: printf("\x1b[%d;14H%s", ty, fem[who] ? "Feminine" : "Masculine"); break;
-                case 2: sw = SKIN[skin[who]]; break;
-                case 3: sw = HAIR[hair[who]]; break;
-                case 4: sw = CLOTH[shirt[who]]; break;
-                case 5: sw = CLOTH[pants[who]]; break;
+            sim_init(&t, nm, c[1], SKIN[c[2]], HAIR[c[4]], CLOTH[c[6]], CLOTH[c[7]], 0, 0);
+            sim_setLook(&t, c[3], c[5], CLOTH[c[8]]);
+            if (redraw) {
+                redraw = false;
+                beginDraw();
+                fill(0, 0, 256, 13, COL_PANEL);
+                text(1, 0, "\x1b[32mCREATE-A-SIM\x1b[39m  housemate %d/2", who + 1);
+                for (int r = 0; r < 9; r++) {
+                    int ty = 2 + r * 2;
+                    bool on = r == row;
+                    frame(2, ty * 8 - 3, 252, 14, on ? COL_PANEL2 : COL_PANEL, on ? COL_HI2 : COL_EDGE);
+                    text(1, ty, "%s", lab[r]);
+                    button(10, ty, 2, "<", B_CAS, r * 2, false);
+                    button(29, ty, 2, ">", B_CAS, r * 2 + 1, false);
+                    u16 sw = 0;
+                    switch (r) {
+                    case 0: text(14, ty, "%s", nm); break;
+                    case 1: text(14, ty, "%s", c[1] ? "Feminine" : "Masculine"); break;
+                    case 2: sw = SKIN[c[2]]; break;
+                    case 3: text(14, ty, "%s", HAIRN[c[3]]); break;
+                    case 4: sw = HAIR[c[4]]; break;
+                    case 5: text(14, ty, "%s", TOPN[c[5]]); break;
+                    case 6: sw = CLOTH[c[6]]; break;
+                    case 7: sw = CLOTH[c[7]]; break;
+                    case 8: sw = CLOTH[c[8]]; break;
+                    }
+                    if (sw) frame(14 * 8, ty * 8 - 1, 10 * 8, 10, sw, RGB15(31, 31, 31));
                 }
-                if (sw) frame(14 * 8, 20 + r * 22 + 4, 9 * 8, 12, sw, RGB15(31, 31, 31));
-            }
-            button(9, 21, 14, who ? "Move In!" : "Next Sim", B_TITLE, 0, true);
+                text(1, 20, "Y: random look");
+                button(16, 21, 14, who ? "Move In!" : "Next Sim", B_TITLE, 0, true);
             }
             spin += 2;
             render_cas(&t, spin);
             swiWaitForVBlank();
         }
-        const char* nm = fem[who] ? FNAMES[name[who]] : MNAMES[name[who]];
-        if (who == 1 && fem[0] == fem[1] && name[0] == name[1]) nm = fem[1] ? FNAMES[(name[1] + 1) % 8] : MNAMES[(name[1] + 1) % 8];
-        sim_init(&W.sim[who], nm, fem[who], SKIN[skin[who]], HAIR[hair[who]], CLOTH[shirt[who]], CLOTH[pants[who]],
-                 7.5f + who, 10.5f);
+        const char* nm = c[1] ? FNAMES[c[0]] : MNAMES[c[0]];
+        if (who == 1 && v[0][1] == c[1] && v[0][0] == c[0]) nm = c[1] ? FNAMES[(c[0] + 1) % 8] : MNAMES[(c[0] + 1) % 8];
+        sim_init(&W.sim[who], nm, c[1], SKIN[c[2]], HAIR[c[4]], CLOTH[c[6]], CLOTH[c[7]], 7.5f + who, 10.5f);
+        sim_setLook(&W.sim[who], c[3], c[5], CLOTH[c[8]]);
     }
     W.nsim = 2;
     W.active = 0;

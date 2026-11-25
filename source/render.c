@@ -1,11 +1,14 @@
 // PocketLife - 3D rendering on the top screen (top-down <-> 2.5D isometric)
 #include "game.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 int g_lastPolys;
 static int s_cull = POLY_CULL_BACK;
 static int s_tex[FL_COUNT];
+static u32 s_bodyFmt;
+void render_initSims(void);
 
 #define REG_DIFAMB (*(vu32*)0x040004C0)
 #define POLY_RAM_COUNT (*(vu16*)0x04000604)
@@ -142,6 +145,7 @@ void render_init(void) {
     glViewport(0, 0, 255, 191);
     vramSetBankA(VRAM_A_TEXTURE);
     for (int t = 0; t < FL_COUNT; t++) makeTex(t);
+    render_initSims();
     glMaterialf(GL_SPECULAR, 0);
     glMaterialf(GL_EMISSION, 0);
     glMaterialf(GL_AMBIENT, RGB15(12, 12, 12));
@@ -288,60 +292,242 @@ static void drawObjects(void) {
 }
 
 // ---------------------------------------------------------------- sims
+// Urbz-style street Sims: smooth-shaded parts from tools/character.py, coloured
+// at draw time, with a drawn face texture (blinks, smiles, frowns).
 extern float simHeight(void);
 
-static void limb(float px, float py, float ang, float angZ, float x0, float x1, float len, float t, u16 col, u16 endCol) {
+enum { FACE_NEUTRAL, FACE_HAPPY, FACE_SAD, FACE_BLINK, FACE_COUNT };
+static int s_faceTex[2][FACE_COUNT];
+static int s_stageTex[2];
+static u16 facebuf[32 * 32];
+
+static void fpix(int x, int y, u16 c) { if (x >= 0 && y >= 0 && x < 32 && y < 32) facebuf[y * 32 + x] = c | BIT(15); }
+static void fell(float cx, float cy, float rx, float ry, u16 c) {
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++) {
+            float dx = (x + 0.5f - cx) / rx, dy = (y + 0.5f - cy) / ry;
+            if (dx * dx + dy * dy <= 1.0f) fpix(x, y, c);
+        }
+}
+static void fline(int x0, int y0, int x1, int y1, int th, u16 c) {
+    int n = abs(x1 - x0) > abs(y1 - y0) ? abs(x1 - x0) : abs(y1 - y0);
+    if (!n) n = 1;
+    for (int i = 0; i <= n; i++) {
+        int x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+        for (int t = 0; t < th; t++) fpix(x, y + t, c);
+    }
+}
+
+static void makeFace(int fem, int expr) {
+    memset(facebuf, 0, sizeof(facebuf));             // alpha 0 = see-through to the skin
+    u16 ink = RGB15(4, 3, 3), white = RGB15(31, 31, 30), iris = RGB15(7, 5, 4), lip = RGB15(17, 6, 6);
+    for (int side = 0; side < 2; side++) {
+        float ex = side ? 21.5f : 10.5f;
+        int sgn = side ? 1 : -1;
+        if (expr == FACE_BLINK) {
+            fline((int)ex - 4, 13, (int)ex + 4, 13, 2, ink);
+        } else {
+            fell(ex, 12.5f, 4.2f, 5.0f, ink);          // outline
+            fell(ex, 12.5f, 3.3f, 4.1f, white);
+            fell(ex - sgn * 0.6f, 13.2f, 2.3f, 2.9f, iris);
+            fpix((int)(ex - sgn * 0.6f) - 1, 11, white);  // sparkle
+            if (expr == FACE_HAPPY)   // happy squint: cut off the bottom of the eye
+                for (int y = 15; y < 19; y++) for (int x = -5; x <= 5; x++) if ((int)ex + x >= 0 && (int)ex + x < 32) facebuf[y * 32 + (int)ex + x] = 0;
+        }
+        // eyebrows: chunky, angled by mood
+        int inner = expr == FACE_SAD ? 4 : expr == FACE_HAPPY ? 5 : 6;
+        int outer = expr == FACE_SAD ? 7 : 5;
+        if (side) fline(18, inner, 26, outer, 2, ink); else fline(5, outer, 13, inner, 2, ink);
+        if (fem && expr != FACE_BLINK) {               // lashes
+            int ox = side ? 25 : 6;
+            fline(ox, 9, ox + (side ? 2 : -2), 7, 1, ink);
+            fline(ox + (side ? -1 : 1), 8, ox + (side ? 0 : 0), 6, 1, ink);
+        }
+    }
+    // mouth
+    if (expr == FACE_HAPPY) {
+        for (int x = -5; x <= 5; x++) { int y = 24 + (25 - x * x) / 10; fpix(16 + x, y, ink); fpix(16 + x, y - 1, ink); }
+        fell(16, 26.5f, 3.2f, 1.6f, lip);
+    } else if (expr == FACE_SAD) {
+        for (int x = -4; x <= 4; x++) { int y = 27 - (16 - x * x) / 6; fpix(16 + x, y, ink); fpix(16 + x, y + 1, ink); }
+    } else {
+        fline(12, 25, 20, 25, 2, ink);
+        fpix(20, 24, ink);                             // a little smirk
+    }
+    glGenTextures(1, &s_faceTex[fem][expr]);
+    glBindTexture(GL_TEXTURE_2D, s_faceTex[fem][expr]);
+    glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_32, TEXTURE_SIZE_32, 0, TEXGEN_TEXCOORD, (u8*)facebuf);
+}
+
+// brick wall + concrete for the Create-A-Sim stage
+static void makeStageTex(int which) {
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++) {
+            u16 c;
+            if (which == 0) {
+                int row = y / 4, off = (row & 1) ? 4 : 0;
+                bool mortar = (y % 4 == 3) || ((x + off) % 8 == 7);
+                int n = rnd(4);
+                c = mortar ? C(19, 18, 16) : C(20 + n - (row % 2) * 2, 8 + n / 2, 6 + n / 2);
+            } else {
+                int n = rnd(3);
+                c = (x == 15 || y == 15) ? C(12, 12, 13) : C(17 + n, 17 + n, 18 + n);
+            }
+            texbuf[y * 16 + x] = c;
+        }
+    glGenTextures(1, &s_stageTex[which]);
+    glBindTexture(GL_TEXTURE_2D, s_stageTex[which]);
+    glTexImage2D(0, 0, GL_RGBA, TEXTURE_SIZE_16, TEXTURE_SIZE_16, 0,
+                 TEXGEN_TEXCOORD | GL_TEXTURE_WRAP_S | GL_TEXTURE_WRAP_T, (u8*)texbuf);
+}
+
+void render_initSims(void) {
+    for (int f = 0; f < 2; f++)
+        for (int e = 0; e < FACE_COUNT; e++) makeFace(f, e);
+    makeStageTex(0);
+    makeStageTex(1);
+}
+
+static void mat(u16 col) {
+    u16 c = col & 0x7FFF;
+    u16 amb = RGB15(((c & 31) * 9) >> 4, (((c >> 5) & 31) * 9) >> 4, (((c >> 10) & 31) * 9) >> 4);
+    REG_DIFAMB = c | BIT(15) | (amb << 16);
+}
+static void part(int id, u16 col) { mat(col); glCallList((u32*)g_charParts[id]); }
+
+typedef struct { float legA[2], knee[2], armA[2], armZ[2], elbow[2], bob, nod, lean, turn; } Pose;
+
+static void computePose(const Sim* s, bool walking, Pose* p) {
+    memset(p, 0, sizeof(*p));
+    float t = s->anim;
+    for (int k = 0; k < 2; k++) { p->armZ[k] = 7; p->elbow[k] = -12; p->knee[k] = 3; }
+    switch (s->pose) {
+    case POSE_SIT:
+        for (int k = 0; k < 2; k++) { p->legA[k] = -86; p->knee[k] = 84; p->armA[k] = -18; p->elbow[k] = -45; }
+        p->lean = -4;
+        break;
+    case POSE_LIE:
+        for (int k = 0; k < 2; k++) { p->armZ[k] = 4; p->elbow[k] = -5; }
+        p->nod = -10;
+        break;
+    case POSE_DANCE: {
+        float a = sinf(t * 0.22f), b = cosf(t * 0.22f);
+        p->armA[0] = -140 + a * 30; p->armA[1] = -140 - a * 30;
+        p->elbow[0] = p->elbow[1] = -35;
+        p->armZ[0] = p->armZ[1] = 25;
+        p->legA[0] = a * 12; p->legA[1] = -a * 12;
+        p->knee[0] = 20 + fabsf(b) * 25; p->knee[1] = 20 + fabsf(a) * 25;
+        p->bob = -fabsf(b) * 0.04f; p->turn = a * 20; p->nod = b * 10;
+        break; }
+    case POSE_TALK:
+        p->armA[0] = -35 + sinf(t * 0.13f) * 22; p->elbow[0] = -70 + sinf(t * 0.21f) * 20; p->armZ[0] = 14;
+        p->armA[1] = -10; p->elbow[1] = -25;
+        p->nod = sinf(t * 0.17f) * 6; p->turn = sinf(t * 0.05f) * 8;
+        break;
+    case POSE_WAVE:
+        p->armA[0] = -160; p->elbow[0] = -25; p->armZ[0] = 18 + sinf(t * 0.35f) * 18;
+        p->nod = 4;
+        break;
+    case POSE_USE:
+        for (int k = 0; k < 2; k++) { p->armA[k] = -45 + sinf(t * 0.25f + k * 2) * 8; p->elbow[k] = -50; }
+        p->nod = 10; p->lean = 6;
+        break;
+    default:
+        if (walking) {
+            float w = sinf(t * 0.26f);
+            p->legA[0] = w * 30; p->legA[1] = -w * 30;
+            for (int k = 0; k < 2; k++) {
+                p->knee[k] = 6 + (p->legA[k] > 0 ? p->legA[k] * 1.3f : 0);
+                p->armA[k] = -p->legA[k] * 0.8f;
+                p->elbow[k] = -20 - fabsf(p->legA[k]) * 0.4f;
+            }
+            p->bob = fabsf(cosf(t * 0.26f)) * 0.02f - 0.01f;
+            p->turn = w * 6; p->lean = 4;
+        } else {
+            // street idle: weight shift, breathing, glancing around
+            float b = sinf(t * 0.045f);
+            p->legA[0] = -3; p->legA[1] = 4; p->knee[1] = 8;
+            p->armA[0] = b * 3; p->armA[1] = -b * 3; p->armZ[0] = 8; p->armZ[1] = 9;
+            p->bob = b * 0.004f;
+            p->turn = sinf(t * 0.013f) * 18;
+        }
+    }
+}
+
+static void drawSimBody(const Sim* s, bool walking, int expr) {
+    Pose P;
+    computePose(s, walking, &P);
+    const bool hoodie = s->top == 0;
+    glTranslatef32(0, floattof32(P.bob), 0);
+    // legs
+    for (int k = 0; k < 2; k++) {
+        float side = k ? -1 : 1;
+        glPushMatrix();
+        glTranslatef32(floattof32(0.075f * side), floattof32(0.40f), 0);
+        if (P.legA[k]) glRotateX(P.legA[k]);
+        part(CP_UPPER_LEG, s->pants);
+        glTranslatef32(0, floattof32(-0.18f), 0);
+        if (P.knee[k]) glRotateX(P.knee[k]);
+        part(CP_LOWER_LEG, s->pants);
+        glTranslatef32(0, floattof32(-0.165f), 0);
+        float foot = -(P.legA[k] + P.knee[k]) * (s->pose == POSE_SIT ? 1.0f : 0.6f);
+        if (foot) glRotateX(foot);
+        part(CP_SHOE, s->shoes);
+        part(CP_SOLE, RGB15(30, 30, 29));
+        glPopMatrix(1);
+    }
+    part(CP_HIPS, s->pants);
+    // upper body
     glPushMatrix();
-    glTranslatef32(floattof32(px), floattof32(py), 0);
-    if (ang) glRotateX(ang);
-    if (angZ) glRotateZ(angZ);
-    box(x0, -len, -t, x1, 0, t, col);
-    if (endCol) box(x0 - 0.005f, -len - 0.04f, -t - 0.005f, x1 + 0.005f, -len + 0.02f, t + 0.01f, endCol);
+    glTranslatef32(0, floattof32(0.36f), 0);
+    if (P.lean) glRotateX(P.lean);
+    if (P.turn) glRotateY(P.turn * 0.5f);
+    glTranslatef32(0, floattof32(-0.36f), 0);
+    part(hoodie ? CP_TORSO_HOODIE : CP_TORSO_TEE, s->shirt);
+    for (int k = 0; k < 2; k++) {
+        float side = k ? -1 : 1;
+        glPushMatrix();
+        glTranslatef32(floattof32(0.215f * side), floattof32(0.62f), 0);
+        if (P.armZ[k]) glRotateZ(P.armZ[k] * side);
+        if (P.armA[k]) glRotateX(P.armA[k]);
+        part(hoodie ? CP_UARM_HOODIE : CP_UARM_TEE, s->shirt);
+        glTranslatef32(0, floattof32(-0.15f), 0);
+        if (P.elbow[k]) glRotateX(P.elbow[k]);
+        part(hoodie ? CP_LARM_HOODIE : CP_LARM_TEE, hoodie ? s->shirt : s->skin);
+        glTranslatef32(0, floattof32(-0.14f), 0);
+        part(CP_HAND, s->skin);
+        glPopMatrix(1);
+    }
+    // head
+    glTranslatef32(0, floattof32(0.665f), 0);
+    if (P.turn) glRotateY(P.turn * 0.6f);
+    if (P.nod) glRotateX(P.nod);
+    part(CP_HEAD, s->skin);
+    part(CP_HAIR_0 + (s->hairStyle % CP_HAIR_STYLES), s->hair);
+    // face decal (unlit, see-through texture), same polygon ID as the body
+    u32 pf = s_bodyFmt;
+    glPolyFmt(pf & ~(POLY_FORMAT_LIGHT0 | POLY_FORMAT_LIGHT1));
+    glBindTexture(GL_TEXTURE_2D, s_faceTex[s->female ? 1 : 0][expr]);
+    glColor(RGB15(31, 31, 31));
+    float z = 0.137f, x0 = -0.11f, x1 = 0.11f, y0 = 0.02f, y1 = 0.24f;
+    glBegin(GL_QUADS);
+    glTexCoord2t16(0, inttot16(32));              glVertex3v16(V(x0), V(y0), V(z));
+    glTexCoord2t16(inttot16(32), inttot16(32));   glVertex3v16(V(x1), V(y0), V(z));
+    glTexCoord2t16(inttot16(32), 0);              glVertex3v16(V(x1), V(y1), V(z));
+    glTexCoord2t16(0, 0);                         glVertex3v16(V(x0), V(y1), V(z));
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glPolyFmt(pf);
     glPopMatrix(1);
 }
 
-static void drawSimBody(const Sim* s, bool walking) {
-    float t = s->anim;
-    float legA = 0, legB = 0, armA = 0, armB = 0, armZA = 0, armZB = 0, bob = 0;
-    switch (s->pose) {
-    case POSE_SIT: legA = legB = -88; armA = armB = -25; break;
-    case POSE_LIE: armA = armB = -8; break;
-    case POSE_DANCE:
-        armA = -150 + sinf(t * 0.2f) * 30; armB = -150 - sinf(t * 0.2f) * 30;
-        legA = sinf(t * 0.2f) * 15; legB = -legA; bob = fabsf(sinf(t * 0.2f)) * 0.04f; break;
-    case POSE_TALK: armA = -30 + sinf(t * 0.12f) * 25; armZA = 10; break;
-    case POSE_WAVE: armA = -170 + sinf(t * 0.3f) * 15; break;
-    case POSE_USE: armA = armB = -55 + sinf(t * 0.25f) * 8; break;
-    default:
-        if (walking) { legA = sinf(t * 0.28f) * 30; legB = -legA; armA = -legA * 0.8f; armB = legA * 0.8f; }
-        else { armA = armB = sinf(t * 0.05f) * 2; }
-    }
-    u16 dark = RGB15(3, 3, 4);
-    u16 shoe = RGB15(6, 5, 5);
-    glTranslatef32(0, floattof32(bob), 0);
-    // legs
-    limb(0.065f, 0.46f, legA, 0, -0.045f, 0.045f, 0.42f, 0.05f, s->pants, shoe);
-    limb(-0.065f, 0.46f, legB, 0, -0.045f, 0.045f, 0.42f, 0.05f, s->pants, shoe);
-    // hips + torso
-    box(-0.13f, 0.40f, -0.07f, 0.13f, 0.50f, 0.07f, s->pants);
-    box(-0.15f, 0.50f, -0.08f, 0.15f, 0.79f, 0.08f, s->shirt);
-    // arms (sleeve + hand)
-    limb(0.19f, 0.77f, armA, armZA, -0.04f, 0.04f, 0.27f, 0.04f, s->shirt, s->skin);
-    limb(-0.19f, 0.77f, armB, -armZB, -0.04f, 0.04f, 0.27f, 0.04f, s->shirt, s->skin);
-    // head
-    box(-0.03f, 0.78f, -0.03f, 0.03f, 0.82f, 0.03f, s->skin);
-    box(-0.11f, 0.82f, -0.10f, 0.11f, 1.02f, 0.10f, s->skin);
-    // face
-    box(0.03f, 0.90f, 0.10f, 0.06f, 0.94f, 0.11f, dark);
-    box(-0.06f, 0.90f, 0.10f, -0.03f, 0.94f, 0.11f, dark);
-    box(-0.03f, 0.85f, 0.10f, 0.03f, 0.865f, 0.105f, RGB15(20, 8, 8));
-    // hair
-    box(-0.12f, 0.99f, -0.11f, 0.12f, 1.06f, 0.11f, s->hair);
-    box(-0.12f, s->female ? 0.66f : 0.88f, -0.12f, 0.12f, 1.0f, -0.07f, s->hair);
-    if (s->female) {
-        box(-0.125f, 0.80f, -0.10f, -0.105f, 1.0f, 0.04f, s->hair);
-        box(0.105f, 0.80f, -0.10f, 0.125f, 1.0f, 0.04f, s->hair);
-    }
+static int faceFor(const Sim* s, int idx) {
+    if (s->pose == POSE_LIE && s->qlen && (s->q[0].act == ACT_SLEEP || s->q[0].act == ACT_NAP)) return FACE_BLINK;
+    int t = ((int)s->anim + idx * 97) % 230;
+    if (t < 7) return FACE_BLINK;
+    if (s->pose == POSE_DANCE || s->pose == POSE_WAVE) return FACE_HAPPY;
+    float m = sim_mood(s);
+    return m > 62 ? FACE_HAPPY : m < 35 ? FACE_SAD : FACE_NEUTRAL;
 }
 
 static void plumbob(float x, float y, float z, float mood, float spin) {
@@ -369,18 +555,19 @@ static void plumbob(float x, float y, float z, float mood, float spin) {
 static void drawSim(int i, bool active, float spin) {
     const Sim* s = &W.sim[i];
     float H = simHeight();
-    glPolyFmt(POLY_ALPHA(31) | s_cull | POLY_FORMAT_LIGHT0 | POLY_FORMAT_LIGHT1 | POLY_ID(55 + i));
+    s_bodyFmt = POLY_ALPHA(31) | s_cull | POLY_FORMAT_LIGHT0 | POLY_FORMAT_LIGHT1 | POLY_ID(55 + i);
+    glPolyFmt(s_bodyFmt);
     glBindTexture(GL_TEXTURE_2D, 0);
     glPushMatrix();
     float baseY = s->y;
-    if (s->pose == POSE_SIT) baseY = s->y - 0.44f * H;
+    if (s->pose == POSE_SIT) baseY = s->y - 0.40f * H;
     if (s->pose == POSE_LIE) baseY = s->y + 0.08f * H;
     if (baseY < 0) baseY = 0;
     glTranslatef32(floattof32(s->x), floattof32(baseY), floattof32(s->z));
     glRotateY(s->face);
     if (s->pose == POSE_LIE) { glTranslatef32(0, 0, 0); glRotateX(-90); }
     glScalef32(floattof32(H), floattof32(H), floattof32(H));
-    drawSimBody(s, s->state == SS_WALK);
+    drawSimBody(s, s->state == SS_WALK, faceFor(s, i));
     glPopMatrix(1);
     // soft shadow
     if (s->pose != POSE_LIE) flatQuad(s->x - 0.2f, s->z - 0.2f, s->x + 0.2f, s->z + 0.2f, 0.012f, RGB15(2, 4, 2), 12, 50);
@@ -426,23 +613,58 @@ void render_scene(int mode, int cx, int cz, int heldDef, int heldRot, int buildE
     glFlush(0);
 }
 
-// Create-a-Sim preview
+// Create-a-Sim preview: a street corner with a brick wall
 void render_cas(const Sim* s, float spin) {
-    setCamera(0, 0.42f, 0, 0.9f, 12, 0);
+    setCamera(0, 0.5f, 0, 0.95f, 10, 0);
     glPolyFmt(POLY_ALPHA(31) | POLY_CULL_NONE | POLY_ID(0));
-    texQuad(-2, -2, 2, 2, 0, FL_CARPET);
+    glColor(RGB15(31, 31, 31));
+    // pavement
+    glBindTexture(GL_TEXTURE_2D, s_stageTex[1]);
+    glBegin(GL_QUADS);
+    glTexCoord2t16(0, 0);                       glVertex3v16(V(-2), 0, V(-1));
+    glTexCoord2t16(0, inttot16(48));            glVertex3v16(V(-2), 0, V(2));
+    glTexCoord2t16(inttot16(64), inttot16(48)); glVertex3v16(V(2), 0, V(2));
+    glTexCoord2t16(inttot16(64), 0);            glVertex3v16(V(2), 0, V(-1));
+    glEnd();
+    // brick wall
+    glPolyFmt(POLY_ALPHA(31) | POLY_CULL_NONE | POLY_ID(1));
+    glBindTexture(GL_TEXTURE_2D, s_stageTex[0]);
+    glBegin(GL_QUADS);
+    glTexCoord2t16(0, inttot16(40));            glVertex3v16(V(-2), 0, V(-1));
+    glTexCoord2t16(inttot16(64), inttot16(40)); glVertex3v16(V(2), 0, V(-1));
+    glTexCoord2t16(inttot16(64), 0);            glVertex3v16(V(2), V(1.6f), V(-1));
+    glTexCoord2t16(0, 0);                       glVertex3v16(V(-2), V(1.6f), V(-1));
+    glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
+    // a splash of paint on the wall
+    static const u16 paint[3] = { RGB15(31, 8, 20), RGB15(6, 26, 31), RGB15(31, 27, 4) };
+    for (int k = 0; k < 3; k++) {
+        glPolyFmt(POLY_ALPHA(22) | POLY_CULL_NONE | POLY_ID(2 + k));
+        glColor(paint[k]);
+        float cx = -1.2f + k * 1.15f, cy = 0.55f + (k & 1) * 0.35f;
+        glBegin(GL_TRIANGLES);
+        for (int j = 0; j < 6; j++) {
+            float a0 = j * 1.047f, a1 = (j + 1) * 1.047f, r0 = 0.22f + (j & 1) * 0.08f, r1 = 0.22f + ((j + 1) & 1) * 0.08f;
+            glVertex3v16(V(cx), V(cy), V(-0.99f));
+            glVertex3v16(V(cx + cosf(a0) * r0), V(cy + sinf(a0) * r0 * 0.7f), V(-0.99f));
+            glVertex3v16(V(cx + cosf(a1) * r1), V(cy + sinf(a1) * r1 * 0.7f), V(-0.99f));
+        }
+        glEnd();
+    }
+    flatQuad(-0.28f, -0.22f, 0.28f, 0.22f, 0.005f, RGB15(3, 3, 4), 12, 50);
+
     Sim t = *s;
-    t.x = 0; t.z = 0; t.y = 0; t.face = spin; t.pose = POSE_STAND;
+    t.pose = POSE_STAND;
+    t.state = SS_IDLE;
+    t.anim = spin * 4;
     float H = simHeight();
-    glPolyFmt(POLY_ALPHA(31) | s_cull | POLY_FORMAT_LIGHT0 | POLY_FORMAT_LIGHT1 | POLY_ID(55));
+    s_bodyFmt = POLY_ALPHA(31) | s_cull | POLY_FORMAT_LIGHT0 | POLY_FORMAT_LIGHT1 | POLY_ID(55);
+    glPolyFmt(s_bodyFmt);
     glPushMatrix();
-    glRotateY(spin);
-    // fill the frame regardless of the kit's scale
-    float k = 0.85f / H;
+    glRotateY(sinf(spin * 0.02f) * 50);
+    float k = 0.92f / H;
     glScalef32(floattof32(H * k), floattof32(H * k), floattof32(H * k));
-    t.anim += spin;
-    drawSimBody(&t, false);
+    drawSimBody(&t, false, ((int)spin % 180) < 4 ? FACE_BLINK : FACE_HAPPY);
     glPopMatrix(1);
     g_lastPolys = POLY_RAM_COUNT;
     glFlush(0);

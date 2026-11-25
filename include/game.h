@@ -71,7 +71,8 @@ typedef struct { u8 act; s8 obj; s8 sim; s8 tx, tz; } QItem;
 typedef struct {
     char name[12];
     u8 female;
-    u16 skin, hair, shirt, pants;
+    u8 hairStyle, top;     // CP hair 0..5, 0 hoodie / 1 tee
+    u16 skin, hair, shirt, pants, shoes;
     float x, z, y, face;
     float need[NEED_COUNT];
     float skill[SKILL_COUNT];
@@ -142,6 +143,7 @@ u8   world_getWall(int horiz, int x, int z);
 
 // ---------------------------------------------------------------- sims.c
 void sim_init(Sim* s, const char* name, int female, u16 skin, u16 hair, u16 shirt, u16 pants, float x, float z);
+void sim_setLook(Sim* s, int hairStyle, int top, u16 shoes);
 void sim_update(int i, float gameMinutes, float realStep);
 bool sim_queue(int i, int act, int obj, int other, int tx, int tz);
 void sim_cancel(int i);

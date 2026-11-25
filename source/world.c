@@ -221,7 +221,7 @@ int world_polyEstimate(void) {
         }
     for (int i = 0; i < W.nobj; i++) p += g_models[g_objDefs[W.obj[i].def].model].polys;
     // roughly 40% of a closed mesh faces away from the camera and is culled
-    return p * 6 / 10 + 160;   // + floors, sims, cursor
+    return p * 6 / 10 + 340;   // + floors, the two Sims (~150 each after culling), cursor
 }
 
 // ---------------------------------------------------------------- starter house
