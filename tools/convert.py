@@ -220,7 +220,60 @@ def split_polys(faces):
             if i + 1 < len(g):
                 out.append(([g[0], g[i], g[i + 1]], c))
     # remove degenerate pieces produced by the fan
-    return [(f, c) for f, c in out if face_normal(f) is not None]
+    return merge_quads([(f, c) for f, c in out if face_normal(f) is not None])
+
+
+def merge_quads(polys):
+    """pair up coplanar, same-colour triangles that share an edge into convex quads
+    (the DS counts a quad as one polygon, same as a triangle)"""
+    tris = [i for i, (f, c) in enumerate(polys) if len(f) == 3]
+    edge = {}
+    for i in tris:
+        f = polys[i][0]
+        for k in range(3):
+            edge.setdefault((f[k], f[(k + 1) % 3]), []).append(i)
+    used, out = set(), []
+    for i in tris:
+        if i in used:
+            continue
+        f, c = polys[i]
+        n1 = face_normal(f)
+        done = False
+        for k in range(3):
+            u, v = f[k], f[(k + 1) % 3]
+            p = f[(k + 2) % 3]
+            for j in edge.get((v, u), []):
+                if j == i or j in used or polys[j][1] != c:
+                    continue
+                g = polys[j][0]
+                n2 = face_normal(g)
+                if n1 is None or n2 is None or sum(a * b for a, b in zip(n1, n2)) < 0.999:
+                    continue
+                q = [x for x in g if x != u and x != v]
+                if len(q) != 1:
+                    continue
+                quad = [p, u, q[0], v]
+                # convex?
+                ok = True
+                for m in range(4):
+                    a, b, cc = quad[m], quad[(m + 1) % 4], quad[(m + 2) % 4]
+                    cr = cross(sub(b, a), sub(cc, b))
+                    if sum(x * y for x, y in zip(cr, n1)) <= 1e-12:
+                        ok = False
+                        break
+                if not ok:
+                    continue
+                used.add(i); used.add(j)
+                out.append((quad, c))
+                done = True
+                break
+            if done:
+                break
+        if not done:
+            used.add(i)
+            out.append((f, c))
+    out += [pc for pc in polys if len(pc[0]) == 4]
+    return out
 
 
 def decimate(faces, cap):

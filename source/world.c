@@ -293,7 +293,6 @@ void world_newGame(void) {
     put(MDL_ARMCHAIR, 8, 6, 1);
     put(MDL_RADIO, 6, 5, 0);
     put(MDL_PLANT, 13, 5, 0);
-    put(MDL_COATRACK, 8, 8, 0);
 
     W.money = 1500;
     W.minutes = 8 * 60;      // day 1, 8am
